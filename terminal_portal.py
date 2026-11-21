@@ -110,10 +110,16 @@ class UnixTerminal(Terminal):
         self.loop.remove_reader(self.fd)
         os.close(self.fd)
         for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGKILL):
+            if self.process.poll() is not None:
+                break
             try:
                 os.killpg(self.process.pid, sig)
             except ProcessLookupError:
                 pass
+            except PermissionError:
+                # Some macOS runners restrict group signals. Target our child,
+                # which Popen also checks for exit before sending the signal.
+                self.process.send_signal(sig)
             for _ in range(10):
                 if self.process.poll() is not None:
                     self.finish()

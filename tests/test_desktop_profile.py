@@ -11,7 +11,7 @@ class ProfileTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.home = Path(tmp.name)
+        self.home = Path(tmp.name).resolve(strict=True)
         (self.home / "cert.pem").touch()
         self.path = self.home / "client.json"
         self.data = dict(signaling="https://control.example:8443", cert="cert.pem",
