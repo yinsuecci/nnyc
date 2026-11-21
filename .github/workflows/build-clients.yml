@@ -1,0 +1,37 @@
+name: Build client test packages
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements-dev.txt -r requirements-desktop.txt pyinstaller==6.16.0
+      - run: npm install --no-save --ignore-scripts @xterm/xterm@5.5.0
+      - if: runner.os != 'Linux'
+        run: python -m unittest discover -s tests -v
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils xvfb xauth openbox wmctrl xdotool libglib2.0-bin fonts-noto-cjk
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a -s '-screen 0 1280x900x24' python -m unittest discover -s tests -v
+      - name: Package native client and verify extracted artifact
+        run: python tools/package_desktop.py --output dist/packages
+      - name: Verify Debian install, desktop launch and uninstall
+        if: runner.os == 'Linux'
+        run: bash tools/check_installed_linux.sh dist/packages/*.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NNRemote-unsigned-${{ matrix.os }}
+          path: dist/packages/*
+          if-no-files-found: error

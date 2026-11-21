@@ -1,0 +1,12 @@
+{
+  "host": "0.0.0.0",
+  "port": 8443,
+  "cert": "/run/nn-remote/fullchain.pem",
+  "key": "/run/nn-remote/privkey.pem",
+  "devices": {
+    "REPLACE_WITH_SHA256_OF_ALICE_TOKEN": "alice",
+    "REPLACE_WITH_SHA256_OF_BOB_TOKEN": "bob"
+  },
+  "directory_grants": {},
+  "relay": false
+}

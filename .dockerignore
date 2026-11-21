@@ -1,0 +1,11 @@
+**
+!Dockerfile
+!signal_server.py
+!requirements.txt
+!health_probe.py
+!relay.py
+!cluster.py
+!relay_worker.py
+!server_metrics.py
+!admin_web/
+!admin_web/**

@@ -1,0 +1,10 @@
+{
+  "host": "127.0.0.1",
+  "port": 9445,
+  "cert": "/run/nn-remote/fullchain.pem",
+  "key": "/run/nn-remote/privkey.pem",
+  "coordinator": "https://signal.example.com:8443",
+  "coordinator_ca": null,
+  "node_id": "REPLACE_WITH_ADMIN_REGISTERED_NODE_ID",
+  "disk_path": "/"
+}

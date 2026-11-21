@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>终端 · nn远程</title>
+<link rel="stylesheet" href="/assets/xterm.css">
+<link rel="stylesheet" href="/portal.css">
+<header><strong>nn远程</strong><span id="status" role="status">等待配对</span></header>
+<main>
+<form id="pair"><label>一次性配对码<input name="code" required autocomplete="off" autocapitalize="none"></label><button>配对</button></form>
+<div id="output" aria-label="终端输出"></div>
+<div class="keys"><button id="reconnect">连接 / 重连</button><button id="interrupt" type="button">Ctrl+C</button><button id="escape" type="button">Esc</button><button id="tab" type="button">Tab</button></div>
+<form id="input"><input name="message" aria-label="终端输入" placeholder="输入命令或给 Agent 的消息" autocomplete="off" autocapitalize="none"><button>发送</button></form>
+</main>
+<script src="/assets/xterm.js" defer></script>
+<script src="/portal.js" defer></script>
+</html>

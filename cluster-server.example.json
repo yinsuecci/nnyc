@@ -1,0 +1,10 @@
+{
+  "host": "127.0.0.1",
+  "port": 8443,
+  "cert": "/run/nn-remote/fullchain.pem",
+  "key": "/run/nn-remote/privkey.pem",
+  "registry_file": "/run/nn-remote/registry.json",
+  "cluster": true,
+  "directory_grants": {},
+  "cluster_file": "/var/lib/nn-remote/nodes.json"
+}

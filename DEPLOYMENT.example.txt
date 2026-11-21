@@ -1,0 +1,9 @@
+Redacted deployment reference, not a runtime configuration.
+
+SSH_ROOT_PASSWORD=***
+PUBLIC_SERVER_ADDRESS=***
+PUBLIC_SERVER_KEY_PIN=***
+ADMIN_TOKEN=***
+
+Provision a new deployment with its own credentials. Never use the placeholders
+as credentials. Keep production configuration outside the repository.

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>nn远程 · 服务器管理</title><link rel="stylesheet" href="/admin/style.css"></head>
+<body>
+<aside><a class="brand" href="/admin">nn<span>远程</span></a><p>管理控制台</p><nav aria-label="后台导航"><a href="#overview" aria-current="location">服务器总览</a><a href="#nodes">中继节点</a><a href="#settings">容量策略</a></nav></aside>
+<main><header><div><p class="eyebrow">nn远程　/　管理控制台</p><h1 id="page-title">集群总览</h1></div><span id="updated">尚未连接</span></header>
+<section id="login" aria-labelledby="login-title"><h2 id="login-title">管理员验证</h2><form id="login-form"><label>管理员令牌<input id="token" type="password" autocomplete="current-password" required minlength="32"></label><button>连接后台</button></form><p class="hint">令牌仅保留在当前页面内存中，不写入浏览器存储。请通过可信 HTTPS 地址访问。</p></section>
+<p id="message" role="status" aria-live="polite"></p>
+<div id="dashboard" hidden>
+<div class="actions"><button id="logout" class="secondary">退出管理</button></div>
+<div data-view="overview">
+<section aria-labelledby="overview-title"><div class="section-heading"><h2 id="overview-title">中继集群总占用</h2></div><p id="coverage" class="hint"></p><div id="totals" class="metrics"></div></section>
+<div class="insight"><section><div class="section-heading"><h2>CPU 总占用率</h2><small>最近一小时</small></div><svg id="trend" viewBox="0 0 600 150" role="img" aria-label="在线中继 CPU 加权占用趋势"></svg><p id="trend-note" class="hint"></p></section><section><h2>需要关注</h2><div id="alerts"></div></section></div>
+<section class="coordinator"><h2>控制节点</h2><p id="coordinator">等待采样</p><p class="hint">资源为主机可见口径；容器配额需单独监测，同一物理机不要重复注册采集节点。</p></section>
+</div>
+<section data-view="nodes" hidden><div class="section-heading"><div><h2>中继节点</h2><p class="hint">过载、离线或维护节点不再接收新会话。已有会话不强制迁移。</p></div><button id="refresh" class="secondary">刷新数据</button></div><div id="node-list"></div></section>
+<div data-view="settings" hidden>
+<section class="settings"><div><h2 id="form-title">接入一台服务器</h2><p>登记节点后，在对应服务器部署中继进程。这里不保存 SSH 密码，也不会自动安装软件。</p><p class="hint">默认达到 90% 停接，低于 90% 即恢复。所有节点满载时明确拒绝新中继，不挤占已有会话。</p></div>
+<div><form id="node-form"><input id="node-id" type="hidden"><label>节点名称<input id="name" required maxlength="60" placeholder="例如：主节点"></label><label>节点 HTTPS 地址<input id="url" type="url" required placeholder="https://relay.example.com:9445"></label><div class="form-grid"><label>最大会话数<input id="capacity" type="number" min="1" max="128" value="8" required></label><label>带宽预算 Mbps<input id="bandwidth" type="number" min="1" max="100000" value="100" required></label><label>停止分配水位 %<input id="high" type="number" min="50" max="95" value="90" required></label><label>恢复分配水位 %<input id="low" type="number" min="20" max="95" value="90" required></label></div><div class="actions"><button id="save">登记节点</button><button id="cancel-edit" type="button" class="secondary" hidden>取消编辑</button></div></form>
+<details class="import-panel"><summary>批量导入服务器</summary><p class="hint">选择 JSON 数组，每次最多 32 台。只登记节点，不会远程安装程序。</p><pre>[{"name":"备用节点","url":"https://relay.example.invalid"}]</pre><form id="import-form"><label>服务器清单<input id="import-file" type="file" accept=".json,application/json" required></label><button id="import-submit" class="secondary">校验并导入</button></form></details></div>
+</section><section id="credential" hidden><h2>节点凭据，仅本次显示</h2><p>节点卡片可下载不含令牌的配置模板。模板默认监听回环地址，适用于同机反向代理；部署时核对控制服务地址、监听端口和证书路径。令牌单独通过 NN_NODE_TOKEN 提供，隐藏后不可再次查看。</p><pre id="credential-value"></pre><button id="dismiss-credential" class="secondary">隐藏凭据</button></section>
+</div>
+</div></main><script src="/admin/app.js"></script></body></html>

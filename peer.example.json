@@ -1,0 +1,23 @@
+{
+  "signaling": "https://signal.example.invalid:8443",
+  "signal_ca": null,
+  "cert": "device-cert.pem",
+  "key": "device-key.pem",
+  "bind": "0.0.0.0",
+  "port": 9443,
+  "peers": {
+    "bob": "verified-bob-cert.pem"
+  },
+  "terminal": {
+    "origin": "https://host.example.invalid:9446",
+    "bind": "127.0.0.1",
+    "cert": "terminal-fullchain.pem",
+    "key": "terminal-privkey.pem",
+    "cwd": ".",
+    "command": [
+      "codex"
+    ],
+    "assets": "node_modules/@xterm/xterm"
+  },
+  "relay": false
+}
