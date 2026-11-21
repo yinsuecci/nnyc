@@ -1,6 +1,7 @@
 **
 !Dockerfile
 !signal_server.py
+!stun_binding.py
 !requirements.txt
 !health_probe.py
 !relay.py

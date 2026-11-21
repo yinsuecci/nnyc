@@ -40,6 +40,7 @@ class Presence:
     port: int
     expires: float
     desktop: bool = False
+    rtc: bool = False
 
 
 @dataclass
@@ -49,6 +50,9 @@ class Session:
     expires: float
     state: str = "pending"
     purpose: str = "message"
+    transport: str = "tcp"
+    rtc_offer: str | None = None
+    rtc_answer: str | None = None
 
 
 def directory_grants(value):
@@ -74,6 +78,7 @@ class Rendezvous:
         self.global_requests = deque()
         self.device_requests = {device: deque() for device in devices.values()}
         self.cluster = None
+        self.stun_port = 0
 
     def update_registry(self, devices):
         updated = dict(validate_registry(devices))
@@ -119,6 +124,8 @@ class Rendezvous:
     async def dispatch(self, request):
         self.rate(self.global_requests, self.clock(), 128)
         self.authenticate(request)
+        if request.match_info["action"] == "rtc_publish":
+            request = request.clone(client_max_size=32768)
         try:
             body = await request.json()
         except (ValueError, UnicodeError):
@@ -130,7 +137,7 @@ class Rendezvous:
         self.rate(self.device_requests[device], now, 8)
         self.expire(now)
         return web.json_response(self.handle(device, request.match_info["action"],
-                                             body, request.remote, now))
+                                             body, request.remote, now), headers={"Cache-Control": "no-store"})
 
     def handle(self, device, action, body, ip, now):
         if action == "presence":
@@ -141,17 +148,23 @@ class Rendezvous:
             allowed = self.directory.get(device, ())
             return {"devices": {p: p in self.online for p in peers
                                 if p in allowed and p != device and p in self.device_requests}}
+        if action == "viewer_heartbeat":
+            if self.online.get(device) and self.online[device].port:
+                raise web.HTTPConflict(text="Device ID already in use by a listening client")
+            self.online[device] = Presence(ip, 0, now + 20)
+            return {"device": device, "stun_port": self.stun_port}
         if action == "heartbeat":
             port = body.get("port")
             if type(port) is not int or not 1 <= port <= 65535 or not ip:
                 raise web.HTTPBadRequest()
             desktop = body.get("desktop", False)
-            if type(desktop) is not bool:
+            rtc = body.get("rtc", False)
+            if type(desktop) is not bool or type(rtc) is not bool or (rtc and not desktop):
                 raise web.HTTPBadRequest()
             previous = self.online.get(device)
             if previous and (previous.ip, previous.port) != (ip, port):
                 self.leave(device)
-            self.online[device] = Presence(ip, port, now + 20, desktop)
+            self.online[device] = Presence(ip, port, now + 20, desktop, rtc)
             return {"device": device}
         if action == "leave":
             self.leave(device)
@@ -168,7 +181,8 @@ class Rendezvous:
                                 if peer != device and peer in self.device_requests}}
         if action == "inbox":
             return {"pending": [{**{"id": sid, "source": session.source},
-                                 **({"purpose": session.purpose} if session.purpose != "message" else {})}
+                                 **({"purpose": session.purpose} if session.purpose != "message" else {}),
+                                 **({"transport": "rtc"} if session.transport == "rtc" else {})}
                                 for sid, session in self.sessions.items()
                                 if session.target == device and session.state == "pending"]}
         if action == "request":
@@ -187,9 +201,15 @@ class Rendezvous:
                 raise web.HTTPUnprocessableEntity()
             if purpose == "desktop" and not self.online[target].desktop:
                 raise web.HTTPUnprocessableEntity()
+            transport = body.get("transport", "tcp")
+            if transport not in ("tcp", "rtc"):
+                raise web.HTTPBadRequest()
+            if not self.online[target].port or (transport == "rtc" and
+                    (purpose != "desktop" or not self.online[target].rtc)):
+                raise web.HTTPUnprocessableEntity()
             sid = secrets.token_hex(32)
             self.sessions[sid] = Session(device, target, now + (15 if purpose == "message" else 60),
-                                         purpose=purpose)
+                                         purpose=purpose, transport=transport)
             return {"id": sid}
         sid = body.get("id")
         if not isinstance(sid, str):
@@ -199,6 +219,22 @@ class Rendezvous:
         session = self.sessions.get(sid)
         if session is None or device not in (session.source, session.target):
             raise web.HTTPNotFound()
+        if action in ("rtc_publish", "rtc_read"):
+            if session.purpose != "desktop" or session.transport != "rtc" or not (
+                session.state == "approved" or action == "rtc_read" and session.state == "claimed"
+            ):
+                raise web.HTTPConflict()
+            sender = device == session.source
+            if action == "rtc_read":
+                return {"sdp": session.rtc_answer if sender else session.rtc_offer}
+            sdp = body.get("sdp")
+            if not isinstance(sdp, str) or not sdp.startswith("v=0\r\n") or len(sdp) > 24000:
+                raise web.HTTPBadRequest()
+            field = "rtc_offer" if sender else "rtc_answer"
+            if (not sender and session.rtc_offer is None) or getattr(session, field) not in (None, sdp):
+                raise web.HTTPConflict()
+            setattr(session, field, sdp)
+            return {}
         if session.purpose == "help":
             if action == "cancel" or (device == session.target and action == "deny"):
                 del self.sessions[sid]
@@ -218,7 +254,7 @@ class Rendezvous:
                 del self.sessions[sid]
             else:
                 session.state = "approved"
-                session.expires = now + APPROVAL_TTL[session.purpose]
+                session.expires = now + (75 if session.transport == "rtc" else APPROVAL_TTL[session.purpose])
             return {}
         if action == "endpoint" and device == session.source:
             if session.state != "approved":
@@ -332,9 +368,13 @@ def main():
     if args.check:
         print(f"Configuration and TLS loaded, {len(registry)} registered devices")
         return
-    web.run_app(application(registry, registry_file=registry_file, relay=config.get("relay") is True,
+    app = application(registry, registry_file=registry_file, relay=config.get("relay") is True,
                             admin_token=admin_token, cluster_file=config.get("cluster_file"),
-                            grants=config.get("directory_grants", {})),
+                            grants=config.get("directory_grants", {}))
+    from stun_binding import install_stun
+    install_stun(app, config.get("host", "127.0.0.1"), config.get("stun_port", 0))
+    app[STATE].stun_port = config.get("stun_port", 0)
+    web.run_app(app,
                 host=config.get("host", "127.0.0.1"),
                 port=config.get("port", 8443), ssl_context=tls, access_log=None,
                 handler_cancellation=True)

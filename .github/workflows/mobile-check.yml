@@ -37,6 +37,12 @@ jobs:
         run: python3 tool/check_ios_simulator.py
       - if: runner.os == 'macOS'
         run: ditto -c -k --keepParent build/ios/iphonesimulator/Runner.app build/ios/NNRemote-iPhone-simulator.zip
+      - name: Compile for physical iPhone without signing credentials
+        if: runner.os == 'macOS'
+        run: flutter build ios --release --no-codesign --no-pub
+      - name: Verify device architecture and platform
+        if: runner.os == 'macOS'
+        run: python3 tool/check_ios_device_build.py
       - uses: actions/upload-artifact@v4
         if: runner.os == 'macOS'
         with:

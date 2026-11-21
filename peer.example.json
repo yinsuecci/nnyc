@@ -5,6 +5,8 @@
   "key": "device-key.pem",
   "bind": "0.0.0.0",
   "port": 9443,
+  "mobile_desktop": false,
+  "rtc_stun": "stun:signal.example.invalid:3478",
   "peers": {
     "bob": "verified-bob-cert.pem"
   },

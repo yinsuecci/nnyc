@@ -1,5 +1,6 @@
 FROM python:3.12-slim
 WORKDIR /opt/nn-remote
+COPY stun_binding.py ./
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY signal_server.py health_probe.py relay.py cluster.py relay_worker.py server_metrics.py ./

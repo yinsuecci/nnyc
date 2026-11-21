@@ -51,7 +51,8 @@ Future<bool> signalReady(Uri origin) async {
       bytes.addAll(chunk);
     }
     final result = jsonDecode(utf8.decode(bytes));
-    return result is Map && result['status'] == 'ready';
+    return result is Map &&
+        (result['status'] == 'ready' || result['ready'] == true);
   }
 
   try {

@@ -34,6 +34,10 @@ async def main():
                           cluster_file="/var/lib/nn-remote/nodes.json")
     worker = worker_application(json.loads((runtime / "worker.json").read_text()),
                                 worker_token)
+    if port := int(os.environ.get("NN_STUN_PORT", "0")):
+        from stun_binding import install_stun
+        install_stun(control, os.environ["NN_LISTEN_IP"], port)
+        control[STATE].stun_port = port
     public = web.Application(client_max_size=4096)
     if os.environ.get("NN_PUBLIC_DASHBOARD") == "1":
         cluster = control[CLUSTER]

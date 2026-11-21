@@ -78,6 +78,10 @@ class Desktop(OfficeUI):
                 dialog.destroy()
 
         ttk.Button(dialog, text="保存", command=save).pack(padx=16, pady=10, anchor="w")
+        from privacy_editor import open_editor, personal_artwork
+        personal = personal_artwork()
+        ttk.Button(dialog, text="编辑本机隐私屏图片", command=lambda: open_editor(dialog, personal)).pack(
+            padx=16, pady=(0, 10), anchor="w")
 
     def close(self):
         self.alive = False
@@ -201,7 +205,7 @@ class Desktop(OfficeUI):
         except Exception:
             pass
 
-    async def share_desktop(self, sid, source, enable_input):
+    async def share_desktop(self, sid, source, enable_input, transport="tcp", private=False):
         if self.host_id is not None:
             self.status.set("已有桌面会话")
             return
@@ -225,6 +229,60 @@ class Desktop(OfficeUI):
 
         ttk.Button(dialog, text="停止共享", command=stop).pack(padx=16, pady=10)
         dialog.protocol("WM_DELETE_WINDOW", stop)
+        audio_task = None
+        audio_ready = asyncio.Event()
+        curtain = curtain_task = None
+        privacy_ready = False
+        async def mute_for_session():
+            from privacy_audio import AudioGuard
+            try:
+                guard = AudioGuard()
+            except OSError:
+                self.status.set("无法启动静音守护进程，已停止共享")
+                stop()
+                return
+            outcome = None
+            try:
+                while True:
+                    event = guard.read()
+                    if event == "muted":
+                        audio_ready.set()
+                        audio_button.configure(text="本机会话静音中")
+                    elif event == "failed":
+                        audio_ready.clear()
+                        audio_button.configure(text="静音未确认")
+                    elif event in ("restored", "restore_failed"):
+                        audio_ready.clear()
+                        outcome = event
+                        self.status.set("无法保持静音，已停止共享" if event == "restored"
+                                        else "请检查音频输出：未确认恢复")
+                        stop()
+                        break
+                    await asyncio.sleep(.1)
+            except (EOFError, OSError):
+                self.status.set("静音守护进程异常，已停止共享")
+                stop()
+            finally:
+                guard.stop()
+                if outcome is None:
+                    try:
+                        async with asyncio.timeout(4):
+                            while (event := guard.read()) != "restored":
+                                if event == "restore_failed":
+                                    raise OSError()
+                                await asyncio.sleep(.05)
+                    except (EOFError, OSError, TimeoutError):
+                        self.status.set("未确认声音恢复，请检查播放设备")
+                await asyncio.to_thread(guard.close)
+
+        def start_audio():
+            nonlocal audio_task
+            if audio_task is not None:
+                return
+            audio_button.configure(state="disabled", text="正在验证静音")
+            audio_task = asyncio.create_task(mute_for_session())
+        audio_button = ttk.Button(dialog, text="本次共享期间静音", command=start_audio)
+        audio_button.pack(padx=16, pady=4)
 
         async def serve(reader, writer):
             if started.is_set():
@@ -234,16 +292,85 @@ class Desktop(OfficeUI):
             try:
                 await host_desktop(reader, writer, backend, self.fps, enable_input)
             finally:
+                if audio_task:
+                    audio_task.cancel()
+                    await asyncio.gather(audio_task, return_exceptions=True)
                 self.host_task = None
                 if dialog.winfo_exists():
                     dialog.destroy()
                 self.host_id = None
 
         try:
+            if transport == "rtc":
+                from PIL import ImageGrab
+                from rtc_host import host_rtc
+                async def confirm(expected):
+                    value = tk.StringVar()
+                    self.label(dialog, "核对身份：输入手机上显示的本次校验码", 11).pack(padx=12)
+                    field = ttk.Entry(dialog, textvariable=value)
+                    field.pack(pady=4)
+                    field.focus_set()
+                    result = asyncio.get_running_loop().create_future()
+                    def verify():
+                        if not result.done():
+                            result.set_result(value.get().replace(" ", "").upper() == expected)
+                    button = ttk.Button(dialog, text="验证并共享", command=verify)
+                    button.pack(pady=4)
+                    try:
+                        if not await result:
+                            return False
+                        if private:
+                            await setup_privacy()
+                        return True
+                    finally:
+                        button.destroy()
+                        field.destroy()
+                async def setup_privacy():
+                    nonlocal curtain, curtain_task, privacy_ready
+                    from privacy_curtain import Curtain, Unsupported
+                    curtain = Curtain(source)
+                    async with asyncio.timeout(12):
+                        state = await curtain.wait()
+                        if state != "covered":
+                            raise Unsupported(state)
+                        start_audio()
+                        await audio_ready.wait()
+                        state = await curtain.check()
+                        if state != "covered":
+                            raise Unsupported("开启静音时隐私屏状态已变化")
+                    async def monitor():
+                        try:
+                            while (reason := await curtain.check()) == "covered":
+                                await asyncio.sleep(.35)
+                            self.status.set("本机已停止共享" if reason == "stop" else reason)
+                        except (OSError, Unsupported):
+                            self.status.set("无法继续确认隐私屏，已停止共享")
+                        stop()
+                    curtain_task = asyncio.create_task(monitor())
+                    privacy_ready = True
+                self.host_task = asyncio.current_task()
+                try:
+                    from privacy_editor import review_received
+                    await host_rtc(self.client, sid, backend, ImageGrab.grab, self.fps,
+                                   enable_input, confirm, self.config.get("rtc_stun"),
+                                   lambda image: review_received(dialog, image,
+                                       lambda: self.client.call("active", id=sid)),
+                                   privacy_verified=lambda: privacy_ready and audio_ready.is_set())
+                finally:
+                    self.host_task = None
+                return
             await self.receiver.allow_service(sid, source, "desktop", serve)
             await asyncio.wait_for(started.wait(), 31)
         finally:
             if self.host_task is None:
+                if curtain_task is not None:
+                    curtain_task.cancel()
+                    await asyncio.gather(curtain_task, return_exceptions=True)
+                if curtain is not None:
+                    await curtain.close()
+                if audio_task and not audio_task.done():
+                    audio_task.cancel()
+                    await asyncio.gather(audio_task, return_exceptions=True)
                 self.receiver.approvals.pop(sid, None)
                 if dialog.winfo_exists():
                     dialog.destroy()
@@ -256,6 +383,7 @@ class Desktop(OfficeUI):
         window = tk.Toplevel(self.root)
         window.title({"desktop":"共享桌面","help":"远程协助","file":"接收文件"}[purpose])
         self.prompts[sid] = window
+        private = tk.BooleanVar(window, False)
         prompt = {"desktop":"请求共享桌面","help":"邀请你协助其电脑","file":"请求发送文件"}[purpose]
         self.label(window, f"{source} {prompt}", 13, True).pack(padx=18, pady=13)
 
@@ -278,11 +406,15 @@ class Desktop(OfficeUI):
             elif choice == "help":
                 self.spawn(offer_help())
             elif choice in ("view", "control"):
-                self.spawn(self.share_desktop(sid, source, choice == "control"))
+                self.spawn(self.share_desktop(sid, source, choice == "control", invite.get("transport", "tcp"),
+                                             private.get()))
             else:
                 self.spawn(self.client.call("deny", id=sid))
 
         if purpose == "desktop":
+            if invite.get("transport") == "rtc":
+                ttk.Checkbutton(window, text="本次隐私共享（单屏遮挡并静音，验证失败则不共享）",
+                                variable=private).pack(padx=18, pady=4)
             ttk.Button(window, text="仅共享画面", command=lambda: answer("view")).pack(padx=18, pady=4)
             ttk.Button(window, text="共享并允许操控", command=lambda: answer("control")).pack(padx=18, pady=4)
         elif purpose == "help":
@@ -306,7 +438,8 @@ class Desktop(OfficeUI):
             while self.alive:
                 pending = {}
                 try:
-                    await self.client.call("heartbeat", port=port, desktop=sys.platform == "win32")
+                    await self.client.call("heartbeat", port=port, desktop=sys.platform == "win32",
+                                           rtc=sys.platform == "win32" and self.config.get("mobile_desktop") is True)
                     self.devices = (await self.client.call("devices", peers=allowed))["devices"]
                     result = await self.client.call("inbox")
                     pending = {item["id"]: item for item in result["pending"]
@@ -467,9 +600,18 @@ def main():
     parser = argparse.ArgumentParser(description="nn远程桌面客户端")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--config")
+    mode.add_argument("--check-rtc-runtime", action="store_true")
     mode.add_argument("--check-ui-assets", action="store_true",
                       help="Validate bundled UI artwork without connecting to a server")
     args = parser.parse_args()
+    if args.check_rtc_runtime:
+        from rtc_runtime_check import verify
+        if sys.platform == "win32":
+            from privacy_curtain import _native
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            _native()
+        asyncio.run(verify())
+        return
     if args.check_ui_assets:
         from office_ui import glyph
         root = Path(__file__).resolve().parent
@@ -496,4 +638,6 @@ def main():
 
 
 if __name__ == "__main__":
+    from multiprocessing import freeze_support
+    freeze_support()
     main()

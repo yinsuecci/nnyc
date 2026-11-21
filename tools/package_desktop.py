@@ -32,6 +32,7 @@ def run(*args):
 
 def verify(executable):
     run(str(executable), "--check-ui-assets")
+    run(str(executable), "--check-rtc-runtime")
 
 
 def linux(dist, work, output):

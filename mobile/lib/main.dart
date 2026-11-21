@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'profile.dart';
 import 'directory_store.dart';
+import 'desktop_page.dart';
 
 void main() => runApp(const NNRemote());
 
@@ -261,6 +262,15 @@ class _DirectoryPageState extends State<DirectoryPage> {
                                               ClipboardData(text: e.key)),
                                           icon: icon('copy'))),
                                   const Divider(),
+                                  FilledButton(
+                                      onPressed: () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                              builder: (_) => DesktopPage(
+                                                  profile!.origin,
+                                                  e.key,
+                                                  e.value))),
+                                      child: const Text('连接远程桌面')),
                                   const ListTile(
                                       title: Text('连接信息'),
                                       subtitle: Text('未建立远程会话')),
