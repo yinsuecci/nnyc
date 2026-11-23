@@ -21,6 +21,8 @@ class DirectoryStore {
             key,
             jsonEncode({
               'signaling': profile.origin.origin,
+              if (profile.signalCaDer != null)
+                'signal_ca_der': profile.signalCaDer,
               'peers': {for (final id in profile.names.keys) id: ''},
               'device_names': profile.names
             }));

@@ -4,11 +4,15 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'ice_path.dart';
+import 'profile.dart';
 
 /// One explicitly authorized Windows desktop; no microphone, camera or disk credentials.
 class DesktopSession {
-  DesktopSession(this.origin, this.target, this._token, this.onStatus,
-      this.onTrack, this.onPath);
+  DesktopSession(DirectoryProfile profile, this.target, this._token,
+      this.onStatus, this.onTrack, this.onPath)
+      : origin = profile.origin,
+        _http =
+            (profile.client()..connectionTimeout = const Duration(seconds: 4));
   final Uri origin;
   final String target;
   String _token;
@@ -16,8 +20,7 @@ class DesktopSession {
   final void Function(MediaStream) onTrack;
   final void Function(IcePath) onPath;
   bool _readingPath = false;
-  final HttpClient _http = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 4);
+  final HttpClient _http;
   RTCPeerConnection? pc;
   RTCDataChannel? input;
   RTCDataChannel? artwork;

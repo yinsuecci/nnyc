@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'rtc_session.dart';
+import 'profile.dart';
 import 'ice_path.dart';
 import 'dart:typed_data';
 import 'artwork_page.dart';
@@ -16,9 +17,10 @@ Offset? desktopPoint(Size area, Size video, Offset tap) {
 }
 
 class DesktopPage extends StatefulWidget {
-  final Uri origin;
+  final DirectoryProfile profile;
+  Uri get origin => profile.origin;
   final String target, name;
-  const DesktopPage(this.origin, this.target, this.name, {super.key});
+  const DesktopPage(this.profile, this.target, this.name, {super.key});
   @override
   State<DesktopPage> createState() => _DesktopPageState();
 }
@@ -89,7 +91,7 @@ class _DesktopPageState extends State<DesktopPage> with WidgetsBindingObserver {
     }
     credential.clear();
     late final DesktopSession next;
-    next = DesktopSession(widget.origin, widget.target, token, (s) {
+    next = DesktopSession(widget.profile, widget.target, token, (s) {
       if (mounted && session == next) {
         if (next.closed) {
           renderer.srcObject = null;

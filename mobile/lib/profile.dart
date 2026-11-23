@@ -4,7 +4,23 @@ import 'dart:io';
 class DirectoryProfile {
   final Uri origin;
   final Map<String, String> names;
-  DirectoryProfile._(this.origin, this.names);
+  final String? signalCaDer;
+  DirectoryProfile._(this.origin, this.names, this.signalCaDer);
+
+  HttpClient client() {
+    final ca = signalCaDer;
+    if (ca == null) return HttpClient();
+    final context = SecurityContext(withTrustedRoots: false);
+    // The iOS native loader expects a single DER certificate; other Dart
+    // platforms use the PEM loader for the same public certificate.
+    final pemBody =
+        RegExp(r'.{1,64}').allMatches(ca).map((m) => m[0]).join('\n');
+    context.setTrustedCertificatesBytes(Platform.isIOS
+        ? base64Decode(ca)
+        : ascii.encode(
+            '-----BEGIN CERTIFICATE-----\n$pemBody\n-----END CERTIFICATE-----\n'));
+    return HttpClient(context: context);
+  }
 
   factory DirectoryProfile.parse(String source) {
     if (source.length > 65536) throw const FormatException('配置过长');
@@ -34,12 +50,31 @@ class DirectoryProfile {
       final name = labels?[key];
       devices[key] = name is String && name.trim().isNotEmpty ? name : key;
     }
-    return DirectoryProfile._(uri, Map.unmodifiable(devices));
+    final ca = json['signal_ca_der'];
+    if (ca != null &&
+        (ca is! String ||
+            ca.isEmpty ||
+            ca.length > 24576 ||
+            base64Encode(base64Decode(ca)) != ca)) {
+      throw const FormatException('无效的信令证书');
+    }
+    final profile =
+        DirectoryProfile._(uri, Map.unmodifiable(devices), ca as String?);
+    if (ca != null) {
+      try {
+        profile.client().close(force: true);
+      } catch (_) {
+        throw const FormatException('无效的信令证书');
+      }
+    }
+    return profile;
   }
 }
 
-Future<bool> signalReady(Uri origin) async {
-  final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+Future<bool> signalReady(DirectoryProfile profile) async {
+  final origin = profile.origin;
+  final client = profile.client()
+    ..connectionTimeout = const Duration(seconds: 5);
   Future<bool> probe() async {
     final request = await client.getUrl(origin.resolve('/healthz'));
     request.followRedirects = false;
@@ -69,7 +104,8 @@ Future<Map<String, bool>> readPresence(
   if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(token)) {
     throw const FormatException('设备令牌格式不正确');
   }
-  final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+  final client = profile.client()
+    ..connectionTimeout = const Duration(seconds: 5);
   Future<Map<String, bool>> read() async {
     final request =
         await client.postUrl(profile.origin.resolve('/v1/presence'));

@@ -30,4 +30,11 @@ STUN 返回映射地址不表示能够穿透所有 NAT。信令 TLS 证书必须
 `flutter build apk --debug`。正式 Android 签名从环境变量
 `NN_ANDROID_KEYSTORE`、`NN_ANDROID_KEY_ALIAS`、`NN_ANDROID_STORE_PASSWORD`
 和 `NN_ANDROID_KEY_PASSWORD` 读取，不使用调试密钥替代正式签名。
-iOS 需在配置 Xcode 的 macOS 构建机验证及签名。
+iOS 需在配置 Xcode 的 macOS 构建机编译，真机安装需要授权签名。
+
+私有信令 CA：在仓库根目录运行
+`python tools/export_phone_directory.py WINDOWS_PROFILE.json WINDOWS_DEVICE_ID phone.json`。
+输入必须是已通过独立渠道确认的 Windows 配置；设备 ID 是被控电脑自己的 ID。
+输出白名单只含 HTTPS 地址、电脑 ID、名称和可选的单张公开 DER 证书，不复制任何令牌或私钥。
+手机导入后仅对该通讯录的信令请求使用这份信任，仍校验域名/IP 和有效期，不修改系统信任库。
+切勿从未经验证的线上握手直接建立信任。更换私有 CA 后需重新导入。

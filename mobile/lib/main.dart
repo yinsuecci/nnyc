@@ -121,7 +121,7 @@ class _DirectoryPageState extends State<DirectoryPage> {
       query = '';
       status = '正在检查信令服务';
     });
-    final ready = await signalReady(next.origin);
+    final ready = await signalReady(next);
     if (!mounted || revision != request) return;
     setState(() => status = ready ? '信令服务可达' : '信令服务未就绪或无法验证');
   }
@@ -267,7 +267,7 @@ class _DirectoryPageState extends State<DirectoryPage> {
                                           context,
                                           MaterialPageRoute(
                                               builder: (_) => DesktopPage(
-                                                  profile!.origin,
+                                                  profile!,
                                                   e.key,
                                                   e.value))),
                                       child: const Text('连接远程桌面')),
@@ -303,7 +303,7 @@ class _ImportPageState extends State<ImportPage> {
       appBar: AppBar(title: const Text('导入通讯录')),
       body: SafeArea(
           child: ListView(padding: const EdgeInsets.all(20), children: [
-        const Text('仅读取信令地址、设备 ID 和名称，不需要令牌或私钥。'),
+        const Text('仅导入可信来源的配置。可包含该信令地址专用的公开证书，不需要令牌或私钥。'),
         const SizedBox(height: 16),
         TextField(
             controller: input,
@@ -318,7 +318,7 @@ class _ImportPageState extends State<ImportPage> {
         const SizedBox(height: 16),
         SwitchListTile(
             title: const Text('在此设备记住通讯录'),
-            subtitle: const Text('不保存令牌、证书或在线状态'),
+            subtitle: const Text('可保存信令公开证书，不保存令牌、私钥或在线状态'),
             value: remember,
             onChanged: saving ? null : (v) => setState(() => remember = v)),
         FilledButton(
