@@ -1,5 +1,5 @@
 import 'dart:io';
-import '../lib/profile.dart';
+import 'package:nn_remote/profile.dart';
 
 // Each input comes from the test harness, never a production profile.
 Future<void> main(List<String> args) async {
