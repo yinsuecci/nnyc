@@ -1,0 +1,53 @@
+name: iPhone and Windows test candidate
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements-dev.txt -r requirements-desktop.txt pyinstaller==6.16.0
+      - run: npm install --no-save --ignore-scripts @xterm/xterm@5.5.0
+      - run: python -m unittest discover -s tests -v
+      - run: python tools/package_desktop.py --output dist/packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nn-windows-${{ github.sha }}
+          path: dist/packages/*
+          if-no-files-found: error
+  iphone:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze --no-pub
+      - run: flutter test --no-pub
+      - run: flutter build ios --release --no-codesign --no-pub
+      - run: python3 tool/check_ios_device_build.py
+      - name: Preserve the device bundle for authorized signing
+        run: |
+          cd build/ios/iphoneos
+          ditto -c -k --keepParent Runner.app ../NNRemote-iphoneos-unsigned.zip
+          cd ..
+          shasum -a 256 NNRemote-iphoneos-unsigned.zip > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nn-iphoneos-unsigned-${{ github.sha }}
+          path: |
+            mobile/build/ios/NNRemote-iphoneos-unsigned.zip
+            mobile/build/ios/SHA256SUMS
+          if-no-files-found: error
