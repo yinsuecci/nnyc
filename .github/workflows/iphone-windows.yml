@@ -40,14 +40,16 @@ jobs:
       - run: python3 tool/check_ios_device_build.py
       - name: Preserve the device bundle for authorized signing
         run: |
-          cd build/ios/iphoneos
-          ditto -c -k --keepParent Runner.app ../NNRemote-iphoneos-unsigned.zip
-          cd ..
-          shasum -a 256 NNRemote-iphoneos-unsigned.zip > SHA256SUMS
+          cd build/ios
+          mkdir Payload
+          ditto iphoneos/Runner.app Payload/Runner.app
+          ditto -c -k --norsrc --keepParent Payload NNRemote-iphoneos-unsigned.ipa
+          unzip -tq NNRemote-iphoneos-unsigned.ipa
+          shasum -a 256 NNRemote-iphoneos-unsigned.ipa > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: nn-iphoneos-unsigned-${{ github.sha }}
           path: |
-            mobile/build/ios/NNRemote-iphoneos-unsigned.zip
+            mobile/build/ios/NNRemote-iphoneos-unsigned.ipa
             mobile/build/ios/SHA256SUMS
           if-no-files-found: error
