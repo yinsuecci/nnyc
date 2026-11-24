@@ -11,25 +11,32 @@ class DirectoryProfile {
     final ca = signalCaDer;
     if (ca == null) return HttpClient();
     final context = SecurityContext(withTrustedRoots: false);
-    // The iOS native loader expects a single DER certificate; other Dart
-    // platforms use the PEM loader for the same public certificate.
     final pemBody =
         RegExp(r'.{1,64}').allMatches(ca).map((m) => m[0]).join('\n');
-    context.setTrustedCertificatesBytes(Platform.isIOS
-        ? base64Decode(ca)
-        : ascii.encode(
-            '-----BEGIN CERTIFICATE-----\n$pemBody\n-----END CERTIFICATE-----\n'));
+    final pem = ascii.encode(
+        '-----BEGIN CERTIFICATE-----\n$pemBody\n-----END CERTIFICATE-----\n');
+    try {
+      context.setTrustedCertificatesBytes(pem);
+    } on TlsException {
+      if (!Platform.isIOS) rethrow;
+      context.setTrustedCertificatesBytes(base64Decode(ca));
+    }
     return HttpClient(context: context);
   }
 
   factory DirectoryProfile.parse(String source) {
     if (source.length > 65536) throw const FormatException('配置过长');
-    final json = jsonDecode(source);
+    final dynamic json;
+    try {
+      json = jsonDecode(source.trim().replaceFirst(RegExp(r'^\uFEFF'), ''));
+    } on FormatException {
+      throw const FormatException('JSON 格式错误，请使用完整的 phone.json 内容');
+    }
     if (json is! Map || json['signaling'] is! String || json['peers'] is! Map) {
       throw const FormatException('需要 signaling 和 peers 字段');
     }
-    final uri = Uri.parse(json['signaling']);
-    if (uri.scheme != 'https' ||
+    final uri = Uri.tryParse(json['signaling']);
+    if (uri == null || uri.scheme != 'https' ||
         uri.host.isEmpty ||
         uri.userInfo.isNotEmpty ||
         uri.hasQuery ||
@@ -51,12 +58,15 @@ class DirectoryProfile {
       devices[key] = name is String && name.trim().isNotEmpty ? name : key;
     }
     final ca = json['signal_ca_der'];
-    if (ca != null &&
-        (ca is! String ||
-            ca.isEmpty ||
-            ca.length > 24576 ||
-            base64Encode(base64Decode(ca)) != ca)) {
-      throw const FormatException('无效的信令证书');
+    if (ca != null) {
+      try {
+        if (ca is! String || ca.isEmpty || ca.length > 24576 ||
+            base64Encode(base64Decode(ca)) != ca) {
+          throw const FormatException();
+        }
+      } on FormatException {
+        throw const FormatException('信令证书编码无效，请使用原始 phone.json');
+      }
     }
     final profile =
         DirectoryProfile._(uri, Map.unmodifiable(devices), ca as String?);

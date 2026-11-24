@@ -307,6 +307,11 @@ class _ImportPageState extends State<ImportPage> {
         const SizedBox(height: 16),
         TextField(
             controller: input,
+            smartQuotesType: SmartQuotesType.disabled,
+            smartDashesType: SmartDashesType.disabled,
+            onChanged: (_) {
+              if (error != null) setState(() => error = null);
+            },
             minLines: 5,
             maxLines: 10,
             autocorrect: false,
@@ -330,11 +335,11 @@ class _ImportPageState extends State<ImportPage> {
                       final parsed = DirectoryProfile.parse(input.text);
                       await DirectoryStore.write(remember ? parsed : null);
                       if (context.mounted) Navigator.pop(context, parsed);
-                    } on FormatException {
+                    } on FormatException catch (e) {
                       if (mounted) {
                         setState(() {
                           saving = false;
-                          error = '配置无效。请检查 HTTPS 地址和 peers 设备列表。';
+                          error = e.message;
                         });
                       }
                     } catch (_) {
