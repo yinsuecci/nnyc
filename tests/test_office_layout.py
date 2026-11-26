@@ -72,11 +72,17 @@ class OfficeLayoutTests(unittest.TestCase):
             nav = ui.rail.winfo_children()[0]
             for state in ("zoomed", "fullscreen", "normal"):
                 if state == "fullscreen":
-                    root.attributes("-fullscreen", True)
+                    root.event_generate("<F11>")
                 else:
-                    root.attributes("-fullscreen", False)
+                    root.event_generate("<Escape>")
                     root.state(state)
                 root.update()
+                self.assertEqual(bool(root.attributes("-fullscreen")), state == "fullscreen")
+                if state == "fullscreen":
+                    root.event_generate("<F11>")
+                    root.update()
+                    self.assertTrue(root.attributes("-fullscreen"), "key repeat toggled fullscreen twice")
+                    root.event_generate("<KeyRelease-F11>")
                 for widget, ink in ((nav, BLUE), (ui.copy_button, MUTED)):
                     for event in ("<Enter>", "<Leave>"):
                         widget._image_label.event_generate(event)

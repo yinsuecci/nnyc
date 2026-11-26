@@ -45,8 +45,9 @@ class IconButton(ctk.CTkButton):
     def _sync_tile(self):
         if self._image_label is not None:
             tile = glyph(*self._symbol, self._image_label.cget("bg"))
-            self._image_label.configure(image=tile.create_scaled_photo_image(
-                self._get_widget_scaling(), self._get_appearance_mode()))
+            photo = tile.create_scaled_photo_image(self._get_widget_scaling(), self._get_appearance_mode())
+            if self._image_label.cget("image") != str(photo):
+                self._image_label.configure(image=photo)
 
     def _draw(self, *args, **kwargs):
         super()._draw(*args, **kwargs)
@@ -176,8 +177,14 @@ class OfficeUI:
         self.copy_button=IconButton(idbox,text="",width=30,height=30,symbol=("copy",18,MUTED),
                                       fg_color="white",hover_color="#eef4ff",command=self.copy_id)
         self.copy_button.pack(side="left")
+        header_compact = None
         def header_fit(event):
-            if event.width < px(480):
+            nonlocal header_compact
+            compact = event.width < px(480)
+            if header_compact == compact:
+                return
+            header_compact = compact
+            if compact:
                 self.view_button.grid(row=2,column=0,columnspan=2,rowspan=1,sticky="w",pady=(8,0))
             else:
                 self.view_button.grid(row=0,column=2,columnspan=1,rowspan=2,sticky="e",pady=0)
@@ -282,8 +289,14 @@ class OfficeUI:
             if compact!=self.compact:
                 self.compact=compact
                 self.arrange_panes()
-        r.bind("<F11>",lambda _:r.attributes("-fullscreen",not r.attributes("-fullscreen")))
-        r.bind("<Escape>",lambda _:r.attributes("-fullscreen",False))
+        if sys.platform == "win32":
+            from window_presentation import Presentation
+            self.presentation = Presentation(r)
+            r.bind("<F11>", lambda _: self.presentation.toggle())
+            r.bind("<Escape>", lambda _: self.presentation.restore())
+        else:
+            r.bind("<F11>",lambda _:r.attributes("-fullscreen",not r.attributes("-fullscreen")))
+            r.bind("<Escape>",lambda _:r.attributes("-fullscreen",False))
         r.bind("<Configure>",resize,add="+")
         self.render()
 
