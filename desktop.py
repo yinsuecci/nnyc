@@ -54,24 +54,9 @@ class Desktop(OfficeUI):
         return tk.Label(parent, text=text, textvariable=variable, anchor="w", bg=bg, fg=INK,
                         font=(FONT, size, "bold" if bold else "normal"))
 
-    async def show_pair_code(self) -> None:
-        if self.client is None:
-            self.status.set("请等待电脑连接信令服务器")
-            return
-        try:
-            result = await self.client.call("pair_code")
-        except ClientResponseError as error:
-            self.status.set("服务器不支持连接码或电脑尚未上线（HTTP %d）" % error.status)
-            return
-        if getattr(self, "_pair_window", None) and self._pair_window.winfo_exists():
-            self._pair_window.destroy()
-        win = self._pair_window = tk.Toplevel(self.root)
-        win.title("手机连接码")
-        code = result["code"]
-        self.label(win, "在 iPhone 上输入此码", 13).pack(padx=24, pady=12)
-        self.label(win, " ".join(code[i:i+3] for i in range(0, 9, 3)), 24, True).pack(padx=24)
-        self.label(win, "2 分钟内有效，仅限一次；共享前仍需你确认。", 10).pack(padx=24, pady=12)
-        win.after(result["expires_in"] * 1000, win.destroy)
+    def open_pairing(self) -> None:
+        from pairing_ui import open_panel
+        open_panel(self)
 
     def show_settings(self):
         host = urlsplit(self.config["signaling"]).hostname

@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'profile.dart';
 import 'directory_store.dart';
 import 'desktop_page.dart';
+import 'dart:io';
+import 'binding_page.dart';
 
 void main() => runApp(const NNRemote());
 
@@ -148,6 +150,12 @@ class _DirectoryPageState extends State<DirectoryPage> {
                   border: const OutlineInputBorder()),
               onChanged: (s) => setState(() => query = s.trim())),
           const SizedBox(height: 24),
+          if (profile != null && Platform.isIOS)
+            FilledButton.icon(
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => BindingPage(profile!))),
+                icon: const Icon(Icons.link),
+                label: const Text('配对与已绑定电脑')),
           Text('我的设备  (${devices.length})'),
           const SizedBox(height: 12),
           if (profile == null)
@@ -187,8 +195,10 @@ class _DirectoryPageState extends State<DirectoryPage> {
                                       onPressed: () => Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                              builder: (_) => DesktopPage(
-                                                  profile!, e.key, e.value))),
+                                              builder: (_) => Platform.isIOS
+                                                  ? BindingPage(profile!)
+                                                  : DesktopPage(profile!, e.key,
+                                                      e.value))),
                                       child: const Text('连接远程桌面')),
                                   const ListTile(
                                       title: Text('连接信息'),

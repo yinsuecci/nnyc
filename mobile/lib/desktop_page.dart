@@ -6,6 +6,7 @@ import 'profile.dart';
 import 'ice_path.dart';
 import 'dart:typed_data';
 import 'artwork_page.dart';
+import 'bindings.dart';
 
 Offset? desktopPoint(Size area, Size video, Offset tap) {
   if (video.isEmpty || area.isEmpty) return null;
@@ -20,7 +21,9 @@ class DesktopPage extends StatefulWidget {
   final DirectoryProfile profile;
   Uri get origin => profile.origin;
   final String target, name;
-  const DesktopPage(this.profile, this.target, this.name, {super.key});
+  final bool bound;
+  const DesktopPage(this.profile, this.target, this.name,
+      {super.key, this.bound = false});
   @override
   State<DesktopPage> createState() => _DesktopPageState();
 }
@@ -85,14 +88,24 @@ class _DesktopPageState extends State<DesktopPage> with WidgetsBindingObserver {
 
   Future<void> connect() async {
     final token = credential.text.trim();
-    if (!RegExp(r'^[0-9]{9}$').hasMatch(token.replaceAll(' ', ''))) {
+    if (!widget.bound &&
+        !RegExp(r'^[0-9]{9}$').hasMatch(token.replaceAll(' ', ''))) {
       setState(() => status = '请输入电脑上显示的 9 位连接码');
       return;
     }
     credential.clear();
+    String auth = token.replaceAll(' ', '');
+    if (widget.bound) {
+      try {
+        auth = await phoneIdentity(widget.profile);
+      } catch (_) {
+        if (mounted) setState(() => status = '无法访问手机配对身份');
+        return;
+      }
+      if (!mounted || session != null) return;
+    }
     late final DesktopSession next;
-    next = DesktopSession(
-        widget.profile, widget.target, token.replaceAll(' ', ''), (s) {
+    next = DesktopSession(widget.profile, widget.target, auth, (s) {
       if (mounted && session == next) {
         if (next.closed) {
           renderer.srcObject = null;
@@ -107,7 +120,7 @@ class _DesktopPageState extends State<DesktopPage> with WidgetsBindingObserver {
       if (mounted && session == next && path != value) {
         setState(() => path = value);
       }
-    });
+    }, bound: widget.bound);
     setState(() {
       session = next;
       path = IcePath.unknown;
@@ -182,7 +195,7 @@ class _DesktopPageState extends State<DesktopPage> with WidgetsBindingObserver {
           child: Column(children: [
         if (session == null)
           if (draft != null) const Text('隐私屏草稿已就绪，连接后可申请保存'),
-        if (session == null)
+        if (session == null && !widget.bound)
           Padding(
               padding: const EdgeInsets.all(16),
               child: TextField(

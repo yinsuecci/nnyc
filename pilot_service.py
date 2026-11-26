@@ -30,7 +30,7 @@ async def main():
     tls.load_cert_chain(runtime / "cert.pem", runtime / "key.pem")
     registry = runtime / "registry.json"
     control = application(json.loads(registry.read_text()), registry_file=registry,
-                          admin_token=admin,
+                          admin_token=admin, binding_file=Path("/var/lib/nn-remote/bindings.sqlite3"),
                           cluster_file="/var/lib/nn-remote/nodes.json")
     worker = worker_application(json.loads((runtime / "worker.json").read_text()),
                                 worker_token)

@@ -14,6 +14,7 @@ from pathlib import Path
 from aiohttp import web
 
 from relay import Relay
+from device_bindings import DeviceBindings
 
 
 LOG = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ class Session:
     rtc_offer: str | None = None
     rtc_answer: str | None = None
     viewer_digest: str | None = None
+    bound_phone: str | None = None
 
 
 def directory_grants(value):
@@ -70,8 +72,10 @@ def directory_grants(value):
 
 
 class Rendezvous:
-    def __init__(self, devices, clock=time.monotonic, grants=None):
+    def __init__(self, devices, clock=time.monotonic, grants=None, binding_file=None):
         self.devices = dict(validate_registry(devices))
+        self.host_keys = {v: k for k, v in self.devices.items()}
+        self.bindings = DeviceBindings(binding_file)
         self.clock = clock
         self.directory = directory_grants({} if grants is None else grants)
         self.online = {}
@@ -91,6 +95,7 @@ class Rendezvous:
         self.device_requests = {device: self.device_requests[device] if device in retained else deque()
                                 for device in updated.values()}
         self.devices = updated
+        self.host_keys = {v: k for k, v in updated.items()}
 
     @staticmethod
     def rate(queue, now, limit):
@@ -101,6 +106,8 @@ class Rendezvous:
         queue.append(now)
 
     def leave(self, device):
+        if device in self.host_keys:
+            self.bindings.clear_codes("host", self.host_keys[device])
         self.pair_codes.pop(device, None)
         self.online.pop(device, None)
         for sid, session in list(self.sessions.items()):
@@ -147,6 +154,20 @@ class Rendezvous:
                                              body, request.remote, now), headers={"Cache-Control": "no-store"})
 
     def handle(self, device, action, body, ip, now):
+        if action in {"binding_issue", "binding_accept", "binding_list", "binding_remove"}:
+            owner = self.host_keys[device]
+            if action == "binding_list":
+                return {"phones": self.bindings.peers("host", owner),
+                        "pending": self.bindings.pending("host", owner, now)}
+            if action == "binding_remove":
+                self.unbind(device, body.get("phone"))
+                return {}
+            if not self.online.get(device) or not self.online[device].rtc:
+                raise web.HTTPConflict()
+            if action == "binding_issue":
+                return {"code": self.bindings.issue("host", owner, now), "expires_in": 120}
+            self.rate(self.redeem_rate, now, 12)
+            return {"phone": self.bindings.redeem("host", owner, body.get("code"), now)}
         if action == "pair_code":
             presence = self.online.get(device)
             if not presence or not presence.rtc:
@@ -228,13 +249,23 @@ class Rendezvous:
             return {"id": sid}
         return self.session_action(device, action, body, now)
 
+    def unbind(self, target: str, phone: object) -> None:
+        key = self.host_keys.get(target)
+        if not key or not isinstance(phone, str) or not self.bindings.contains(key, phone):
+            raise web.HTTPNotFound()
+        self.bindings.remove(key, phone)
+        for sid, session in list(self.sessions.items()):
+            if session.target == target and session.bound_phone == phone:
+                del self.sessions[sid]
+
     async def mobile_pair(self, request: web.Request) -> web.Response:
         action = request.match_info["action"]
         if action == "rtc_publish":
             request = request.clone(client_max_size=32768)
-        if action not in {"redeem", "rtc_publish", "rtc_read", "active", "cancel"}:
+        binding_actions = {"binding_issue", "binding_accept", "binding_list", "binding_remove", "connect"}
+        if action not in {"redeem", "rtc_publish", "rtc_read", "active", "cancel"} | binding_actions:
             raise web.HTTPNotFound()
-        if action == "redeem":
+        if action in {"redeem", "binding_issue", "binding_accept"}:
             self.rate(self.redeem_rate, self.clock(), 12)
         else:
             self.rate(self.global_requests, self.clock(), 128)
@@ -246,21 +277,49 @@ class Rendezvous:
             raise web.HTTPBadRequest()
         now = self.clock()
         self.expire(now)
-        if action == "redeem":
+        phone = None
+        if action in binding_actions:
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer ") or len(auth) != 71 or any(c not in "0123456789abcdef" for c in auth[7:]):
+                raise web.HTTPUnauthorized()
+            phone = hashlib.sha256(("binding:" + auth[7:]).encode()).hexdigest()
+            if action == "binding_issue":
+                result = {"code": self.bindings.issue("phone", phone, now), "expires_in": 120}
+            elif action == "binding_accept":
+                key = self.bindings.redeem("phone", phone, body.get("code"), now)
+                result = {"target": self.devices[key]}
+            elif action == "binding_list":
+                result = {"targets": [self.devices[k] for k in self.bindings.peers("phone", phone) if k in self.devices],
+                          "pending": self.bindings.pending("phone", phone, now)}
+            elif action == "binding_remove":
+                if not isinstance(body.get("target"), str):
+                    raise web.HTTPBadRequest()
+                self.unbind(body["target"], phone)
+                result = {}
+            if action != "connect":
+                return web.json_response(result, headers={"Cache-Control": "no-store"})
+        if action in {"redeem", "connect"}:
             target, code = body.get("target"), body.get("code")
-            if not isinstance(target, str) or not isinstance(code, str) or not code.isascii():
+            if not isinstance(target, str):
                 raise web.HTTPBadRequest()
             pair = self.pair_codes.get(target)
             host = self.online.get(target)
-            if not pair or not host or not host.rtc or not secrets.compare_digest(code, pair[0]):
+            if action == "connect":
+                if target not in self.host_keys or not self.bindings.contains(self.host_keys[target], phone):
+                    raise web.HTTPForbidden()
+                if not host or not host.rtc:
+                    raise web.HTTPConflict()
+            elif not pair or not host or not host.rtc or not isinstance(code, str) or not code.isascii() or not secrets.compare_digest(code, pair[0]):
                 raise web.HTTPUnauthorized()
             if len(self.sessions) >= 128 or sum(s.target == target for s in self.sessions.values()) >= 4:
                 raise web.HTTPTooManyRequests()
-            del self.pair_codes[target]
+            if action == "redeem":
+                del self.pair_codes[target]
             sid, key = secrets.token_hex(32), secrets.token_hex(32)
             # Longer than any registered device ID; cannot impersonate a device.
             self.sessions[sid] = Session("mobile:" + sid, target, now + 60, purpose="desktop",
-                                         transport="rtc", viewer_digest=hashlib.sha256(key.encode()).hexdigest())
+                                         transport="rtc", viewer_digest=hashlib.sha256(key.encode()).hexdigest(),
+                                         bound_phone=phone)
             result = {"id": sid, "session_key": key, "stun_port": self.stun_port}
         else:
             sid = body.get("id")
@@ -390,9 +449,12 @@ async def health(request):
 
 
 def application(devices, clock=time.monotonic, registry_file=None, relay=False,
-                admin_token=None, cluster_file=None, grants=None):
+                admin_token=None, cluster_file=None, grants=None, binding_file=None):
     app = web.Application(client_max_size=4096)
-    app[STATE] = Rendezvous(devices, clock, grants)
+    app[STATE] = Rendezvous(devices, clock, grants, binding_file)
+    async def close_bindings(application: web.Application) -> None:
+        application[STATE].bindings.close()
+    app.on_cleanup.append(close_bindings)
     app[REGISTRY_FILE] = registry_file
     app[RELAY] = Relay(app[STATE]) if relay and not admin_token else None
     if app[RELAY]:
@@ -433,6 +495,8 @@ def main():
         print(f"Configuration and TLS loaded, {len(registry)} registered devices")
         return
     app = application(registry, registry_file=registry_file, relay=config.get("relay") is True,
+                            binding_file=Path(config.get("binding_file") or os.environ.get("NN_BINDING_FILE") or
+                                              Path(args.config).with_name("bindings.sqlite3")),
                             admin_token=admin_token, cluster_file=config.get("cluster_file"),
                             grants=config.get("directory_grants", {}))
     from stun_binding import install_stun

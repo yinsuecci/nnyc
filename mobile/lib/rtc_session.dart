@@ -9,12 +9,14 @@ import 'profile.dart';
 /// One explicitly authorized Windows desktop; no microphone, camera or disk credentials.
 class DesktopSession {
   DesktopSession(DirectoryProfile profile, this.target, this._code,
-      this.onStatus, this.onTrack, this.onPath)
+      this.onStatus, this.onTrack, this.onPath,
+      {this.bound = false})
       : origin = profile.origin,
         _http =
             (profile.client()..connectionTimeout = const Duration(seconds: 4));
   final Uri origin;
   final String target;
+  final bool bound;
   String _code;
   String _token = '';
   final void Function(String) onStatus;
@@ -65,7 +67,9 @@ class DesktopSession {
 
   Future<void> start() async {
     try {
-      final config = await call('redeem', {'target': target, 'code': _code});
+      if (bound) _token = _code;
+      final config = await call(bound ? 'connect' : 'redeem',
+          {'target': target, if (!bound) 'code': _code});
       _code = '';
       sid = config['id'] as String;
       _token = config['session_key'] as String;
@@ -289,6 +293,7 @@ class _SignalError implements Exception {
   @override
   String toString() => switch (status) {
         401 => '连接码已失效或会话已结束，请在电脑上获取新码',
+        403 => '设备绑定已解除，请重新配对',
         429 => '尝试过于频繁，请稍后再试',
         404 => '设备离线或会话已结束',
         422 => '对端未启用移动桌面共享',

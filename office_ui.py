@@ -86,8 +86,6 @@ class OfficeUI:
         foot=tk.Frame(r,bg=RAIL,padx=14,pady=3)
         foot.pack(side="bottom",fill="x")
         label(foot,"nn远程",10,True,BLUE).pack(side="left")
-        if self.config.get("mobile_desktop"):
-            ttk.Button(foot, text="手机连接码", command=lambda: self.spawn(self.show_pair_code())).pack(side="left", padx=8)
         label(foot,size=9,color=MUTED,textvariable=self.status).pack(side="right")
         unit=r.winfo_fpixels("1i")/96
         px=lambda value: round(value*unit)
@@ -179,6 +177,8 @@ class OfficeUI:
             body.pack(fill="x",padx=(px(36),0),pady=(0,px(18)))
             return body
         assist=section("远程协助","people")
+        if self.config.get("mobile_desktop"):
+            button(assist, "手机连接码", self.open_pairing, icon="shield_checkmark").pack(anchor="w", pady=(0,8))
         label(assist,"邀请对方协助本机，或发起对对方电脑的连接请求。",color=MUTED).pack(fill="x")
         actions=tk.Frame(assist,bg="white")
         actions.pack(fill="x",pady=8)
