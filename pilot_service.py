@@ -46,6 +46,7 @@ async def main():
         public.router.add_get("/admin-api/nodes", cluster.admin_api)
         public.router.add_post("/admin-api/nodes", cluster.admin_api)
         public.router.add_post("/cluster/{node}/{action}", cluster.node_api)
+    public.router.add_post("/v1/mobile/{action}", control[STATE].mobile_pair)
     public.router.add_post("/v1/{action}", control[STATE].dispatch)
     public.router.add_get("/v1/relay/{sid}", worker[WORKER].attach)
     async def health(request):

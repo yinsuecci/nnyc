@@ -230,6 +230,8 @@ class Rendezvous:
 
     async def mobile_pair(self, request: web.Request) -> web.Response:
         action = request.match_info["action"]
+        if action == "rtc_publish":
+            request = request.clone(client_max_size=32768)
         if action not in {"redeem", "rtc_publish", "rtc_read", "active", "cancel"}:
             raise web.HTTPNotFound()
         if action == "redeem":
@@ -398,11 +400,7 @@ def application(devices, clock=time.monotonic, registry_file=None, relay=False,
         app.on_shutdown.append(app[RELAY].shutdown)
     app.cleanup_ctx.append(cleanup)
     app.router.add_get("/healthz", health)
-    async def mobile(request: web.Request) -> web.Response:
-        if request.match_info["action"] == "rtc_publish":
-            request = request.clone(client_max_size=32768)
-        return await app[STATE].mobile_pair(request)
-    app.router.add_post("/v1/mobile/{action}", mobile)
+    app.router.add_post("/v1/mobile/{action}", app[STATE].mobile_pair)
     app.router.add_post("/v1/{action}", app[STATE].dispatch)
     if admin_token:
         from cluster import install
