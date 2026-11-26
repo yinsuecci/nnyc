@@ -66,6 +66,35 @@ class OfficeLayoutTests(unittest.TestCase):
         ui.transfer_name.set("项目资料.zip")
         ui.transfer.set("58.2 / 126.8 MiB（46%） · 正在传输（示例）")
         root.update()
+        if sys.platform == "win32":
+            from PIL import ImageColor
+            from office_ui import BLUE, MUTED
+            nav = ui.rail.winfo_children()[0]
+            for state in ("zoomed", "fullscreen", "normal"):
+                if state == "fullscreen":
+                    root.attributes("-fullscreen", True)
+                else:
+                    root.attributes("-fullscreen", False)
+                    root.state(state)
+                root.update()
+                for widget, ink in ((nav, BLUE), (ui.copy_button, MUTED)):
+                    for event in ("<Enter>", "<Leave>"):
+                        widget._image_label.event_generate(event)
+                        root.update()
+                        img = widget._image_label.cget("image")
+                        bg = ImageColor.getrgb(widget._image_label.cget("bg"))
+                        self.assertEqual(root.tk.call(img, "transparency", "get", 0, 0), 0)
+                        self.assertEqual(root.tk.call(img, "get", 0, 0), bg)
+                        w = int(root.tk.call("image", "width", img))
+                        pixels = [root.tk.call(img, "get", x, y) for y in range(w) for x in range(w)]
+                        # Resampling thin strokes can shift every ink pixel slightly.
+                        rgb = ImageColor.getrgb(ink)
+                        self.assertLess(min(max(abs(a-b) for a, b in zip(p, rgb)) for p in pixels), 45)
+                if path := os.environ.get("NN_ICON_PREVIEW"):
+                    import ctypes
+                    from PIL import ImageGrab
+                    ImageGrab.grab(window=ctypes.windll.user32.GetParent(root.winfo_id())).save(
+                        Path(path) / f"office-{state}.png")
         if path := os.environ.get("NN_OFFICE_PREVIEW"):
             from PIL import ImageGrab
             if sys.platform == "win32":

@@ -6,7 +6,7 @@ from pathlib import Path
 from tkinter import font as tkfont
 from tkinter import ttk
 import customtkinter as ctk
-from PIL import Image
+from PIL import Image, ImageColor, ImageOps
 
 BLUE, INK, MUTED, LINE, RAIL = "#0759ed", "#141923", "#526173", "#dce2eb", "#f5f7fa"
 FONT = {"win32": "Microsoft YaHei UI", "darwin": "PingFang SC"}.get(sys.platform, "Noto Sans CJK SC")
@@ -29,17 +29,43 @@ def label(parent, value="", size=10, bold=False, color=INK, **options):
 
 
 @lru_cache(maxsize=128)
-def glyph(name, size, color):
+def glyph(name, size, color, background="white"):
     with Image.open(Path(__file__).with_name("ui_assets") / "fluent" / (name+".png")) as mask:
-        artwork=Image.new("RGBA",mask.size,color)
-        artwork.putalpha(mask)
+        # Give Tk an opaque tile; a fullscreen repaint never has to recover
+        # the destination pixels beneath the antialiased glyph.
+        artwork=ImageOps.colorize(mask, ImageColor.getrgb(background), ImageColor.getrgb(color))
     return ctk.CTkImage(light_image=artwork,dark_image=artwork,size=(size,size))
 
 
+class IconButton(ctk.CTkButton):
+    def __init__(self, parent, *, symbol, **options):
+        self._symbol = symbol
+        super().__init__(parent, image=glyph(*symbol, options["fg_color"]), **options)
+
+    def _sync_tile(self):
+        if self._image_label is not None:
+            tile = glyph(*self._symbol, self._image_label.cget("bg"))
+            self._image_label.configure(image=tile.create_scaled_photo_image(
+                self._get_widget_scaling(), self._get_appearance_mode()))
+
+    def _draw(self, *args, **kwargs):
+        super()._draw(*args, **kwargs)
+        self._sync_tile()
+
+    def _on_enter(self, event=None):
+        super()._on_enter(event)
+        self._sync_tile()
+
+    def _on_leave(self, event=None):
+        super()._on_leave(event)
+        self._sync_tile()
+
+
 def button(parent, title, cmd, blue=False, icon=None):
-    return ctk.CTkButton(parent,text=title,command=cmd,width=100,height=38,
+    cls = IconButton if icon else ctk.CTkButton
+    return cls(parent,text=title,command=cmd,width=100,height=38,
                          font=(FONT,15,"bold"),corner_radius=8,
-                         image=glyph(icon,20,"white" if blue else MUTED) if icon else None,
+                         **({"symbol": (icon,20,"white" if blue else MUTED)} if icon else {}),
                          fg_color=BLUE if blue else "white",text_color="white" if blue else INK,
                          hover_color="#0648c2" if blue else "#eef4ff",
                          border_width=0 if blue else 1,border_color=LINE)
@@ -49,7 +75,7 @@ def monitor(parent, size=46, muted=False):
     fill="#eff1f5" if muted else "#e4eeff"
     ink="#818b99" if muted else BLUE
     return ctk.CTkLabel(parent,text="",width=size,height=size,corner_radius=10,
-                        fg_color=fill,image=glyph("desktop",round(size*.63),ink))
+                        fg_color=fill,image=glyph("desktop",round(size*.63),ink,fill))
 
 
 class OfficeUI:
@@ -95,8 +121,8 @@ class OfficeUI:
         self.nav_hint=tk.StringVar(master=r)
         label(foot,textvariable=self.nav_hint,size=9,color=MUTED).pack(side="left",padx=12)
         def nav(icon,title,cmd,first=False,bottom=False):
-            w=ctk.CTkButton(rail,text="",width=44,height=44,corner_radius=9,
-                            image=glyph(icon,24,BLUE if first else MUTED),
+            w=IconButton(rail,text="",width=44,height=44,corner_radius=9,
+                            symbol=(icon,24,BLUE if first else MUTED),
                             fg_color="#ddeaff" if first else RAIL,hover_color="#deebff",command=cmd)
             w.pack(fill="x",side="bottom" if bottom else "top",pady=3)
             for event in ("<Enter>","<FocusIn>"):
@@ -147,7 +173,7 @@ class OfficeUI:
         idbox.grid(row=1,column=1,sticky="nw")
         label(idbox,"设备 ID",color=MUTED).pack(side="left")
         label(idbox,textvariable=self.id_text).pack(side="left",padx=8)
-        self.copy_button=ctk.CTkButton(idbox,text="",width=30,height=30,image=glyph("copy",18,MUTED),
+        self.copy_button=IconButton(idbox,text="",width=30,height=30,symbol=("copy",18,MUTED),
                                       fg_color="white",hover_color="#eef4ff",command=self.copy_id)
         self.copy_button.pack(side="left")
         def header_fit(event):
@@ -159,7 +185,7 @@ class OfficeUI:
         tk.Frame(p,bg=LINE,height=1).pack(fill="x")
         trust=tk.Frame(p,bg="#f7f9fd",padx=10,pady=9)
         trust.pack(fill="x")
-        ctk.CTkLabel(trust,text="",image=glyph("lock_closed",20,MUTED)).pack(side="left")
+        ctk.CTkLabel(trust,text="",image=glyph("lock_closed",20,MUTED,"#f7f9fd")).pack(side="left")
         self.security_state=tk.StringVar(master=r)
         label(trust,textvariable=self.security_state,color=MUTED).pack(side="left",padx=8)
         tk.Frame(trust,bg=LINE,width=1,height=16).pack(side="left",padx=4)
@@ -198,7 +224,7 @@ class OfficeUI:
         surface.pack(fill="x")
         strip=tk.Frame(surface,bg="#f8faff")
         strip.pack(fill="x",padx=12,pady=10)
-        ctk.CTkLabel(strip,text="",width=36,height=40,image=glyph("folder_arrow_right",24,BLUE),
+        ctk.CTkLabel(strip,text="",width=36,height=40,image=glyph("folder_arrow_right",24,BLUE,"#e4eeff"),
                      fg_color="#e4eeff",corner_radius=7).pack(side="left",padx=(0,10))
         self.file_button=button(strip,"传输文件",self.choose_file)
         self.file_button.pack(side="right",padx=(10,0))
