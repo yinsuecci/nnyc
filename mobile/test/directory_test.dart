@@ -59,7 +59,7 @@ void main() {
     await tester.pumpWidget(const NNRemote());
     await tester.pumpAndSettle();
     expect(find.text('办公室电脑'), findsOneWidget);
-    expect(find.text('状态待确认'), findsOneWidget);
+    expect(find.text('使用电脑连接码连接'), findsOneWidget);
     await tester.tap(find.byTooltip('更多选项'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('清除本机通讯录'));
@@ -69,29 +69,15 @@ void main() {
     expect(find.text('办公室电脑'), findsNothing);
     expect(await DirectoryStore.load(), isNull);
   });
-  testWidgets('confirmed states expire back to unknown', (tester) async {
-    await tester.pumpWidget(
-        MaterialApp(home: DirectoryPage(queryPresence: (p, t) async {
-      expect(p.origin.host, 'signal.example.invalid');
-      expect(t, 'test-device-token');
-      return {'bob': true, 'home': false};
-    })));
+  testWidgets('device directory never prompts for a long-lived credential',
+      (tester) async {
+    await tester.pumpWidget(const NNRemote());
     await tester.tap(find.text('导入设备通讯录'));
     await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byType(TextField).last,
-        source.replaceFirst(
-            '"bob":"cert.pem"', '"bob":"cert.pem","home":"home.pem"'));
+    await tester.enterText(find.byType(TextField).last, source);
     await tester.tap(find.text('导入'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('查询设备状态'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, 'test-device-token');
-    await tester.tap(find.text('查询'));
-    await tester.pumpAndSettle();
-    expect(find.text('在线'), findsOneWidget);
-    expect(find.text('离线'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 21));
-    expect(find.text('状态待确认'), findsNWidgets(2));
+    expect(find.byTooltip('查询设备状态'), findsNothing);
+    expect(find.text('使用电脑连接码连接'), findsOneWidget);
   });
 }

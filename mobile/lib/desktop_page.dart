@@ -85,13 +85,14 @@ class _DesktopPageState extends State<DesktopPage> with WidgetsBindingObserver {
 
   Future<void> connect() async {
     final token = credential.text.trim();
-    if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(token)) {
-      setState(() => status = '请输入本机设备的 64 位令牌');
+    if (!RegExp(r'^[0-9]{9}$').hasMatch(token.replaceAll(' ', ''))) {
+      setState(() => status = '请输入电脑上显示的 9 位连接码');
       return;
     }
     credential.clear();
     late final DesktopSession next;
-    next = DesktopSession(widget.profile, widget.target, token, (s) {
+    next = DesktopSession(
+        widget.profile, widget.target, token.replaceAll(' ', ''), (s) {
       if (mounted && session == next) {
         if (next.closed) {
           renderer.srcObject = null;
@@ -186,12 +187,12 @@ class _DesktopPageState extends State<DesktopPage> with WidgetsBindingObserver {
               padding: const EdgeInsets.all(16),
               child: TextField(
                   controller: credential,
-                  obscureText: true,
+                  keyboardType: TextInputType.number,
                   autocorrect: false,
                   enableSuggestions: false,
                   decoration: InputDecoration(
-                      labelText: '手机设备令牌',
-                      helperText: '仅发往 ${widget.origin.origin}'))),
+                      labelText: '电脑连接码',
+                      helperText: '在 Windows 客户端点击「手机连接码」'))),
         if (!firstFrame && (session?.verificationCode.isNotEmpty ?? false))
           SelectableText('本次校验码：${session!.verificationCode}'),
         Text(firstFrame && session?.closed == false

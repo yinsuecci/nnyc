@@ -53,6 +53,7 @@ class Session:
     transport: str = "tcp"
     rtc_offer: str | None = None
     rtc_answer: str | None = None
+    viewer_digest: str | None = None
 
 
 def directory_grants(value):
@@ -79,6 +80,8 @@ class Rendezvous:
         self.device_requests = {device: deque() for device in devices.values()}
         self.cluster = None
         self.stun_port = 0
+        self.pair_codes: dict[str, tuple[str, float]] = {}
+        self.redeem_rate: deque[float] = deque()
 
     def update_registry(self, devices):
         updated = dict(validate_registry(devices))
@@ -98,12 +101,16 @@ class Rendezvous:
         queue.append(now)
 
     def leave(self, device):
+        self.pair_codes.pop(device, None)
         self.online.pop(device, None)
         for sid, session in list(self.sessions.items()):
             if device in (session.source, session.target):
                 del self.sessions[sid]
 
     def expire(self, now):
+        for target, (_, deadline) in list(self.pair_codes.items()):
+            if deadline <= now:
+                del self.pair_codes[target]
         for device, presence in list(self.online.items()):
             if presence.expires <= now:
                 self.leave(device)
@@ -140,6 +147,13 @@ class Rendezvous:
                                              body, request.remote, now), headers={"Cache-Control": "no-store"})
 
     def handle(self, device, action, body, ip, now):
+        if action == "pair_code":
+            presence = self.online.get(device)
+            if not presence or not presence.rtc:
+                raise web.HTTPConflict()
+            code = f"{secrets.randbelow(10**9):09d}"
+            self.pair_codes[device] = (code, now + 120)
+            return {"code": code, "expires_in": 120}
         if action == "presence":
             peers = body.get("peers")
             if not isinstance(peers, list) or len(peers) > 40 or any(
@@ -182,7 +196,8 @@ class Rendezvous:
         if action == "inbox":
             return {"pending": [{**{"id": sid, "source": session.source},
                                  **({"purpose": session.purpose} if session.purpose != "message" else {}),
-                                 **({"transport": "rtc"} if session.transport == "rtc" else {})}
+                                 **({"transport": "rtc"} if session.transport == "rtc" else {}),
+                                 **({"paired": True} if session.viewer_digest else {})}
                                 for sid, session in self.sessions.items()
                                 if session.target == device and session.state == "pending"]}
         if action == "request":
@@ -211,6 +226,52 @@ class Rendezvous:
             self.sessions[sid] = Session(device, target, now + (15 if purpose == "message" else 60),
                                          purpose=purpose, transport=transport)
             return {"id": sid}
+        return self.session_action(device, action, body, now)
+
+    async def mobile_pair(self, request: web.Request) -> web.Response:
+        action = request.match_info["action"]
+        if action not in {"redeem", "rtc_publish", "rtc_read", "active", "cancel"}:
+            raise web.HTTPNotFound()
+        if action == "redeem":
+            self.rate(self.redeem_rate, self.clock(), 12)
+        else:
+            self.rate(self.global_requests, self.clock(), 128)
+        try:
+            body = await request.json()
+        except (ValueError, UnicodeError):
+            raise web.HTTPBadRequest() from None
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest()
+        now = self.clock()
+        self.expire(now)
+        if action == "redeem":
+            target, code = body.get("target"), body.get("code")
+            if not isinstance(target, str) or not isinstance(code, str) or not code.isascii():
+                raise web.HTTPBadRequest()
+            pair = self.pair_codes.get(target)
+            host = self.online.get(target)
+            if not pair or not host or not host.rtc or not secrets.compare_digest(code, pair[0]):
+                raise web.HTTPUnauthorized()
+            if len(self.sessions) >= 128 or sum(s.target == target for s in self.sessions.values()) >= 4:
+                raise web.HTTPTooManyRequests()
+            del self.pair_codes[target]
+            sid, key = secrets.token_hex(32), secrets.token_hex(32)
+            # Longer than any registered device ID; cannot impersonate a device.
+            self.sessions[sid] = Session("mobile:" + sid, target, now + 60, purpose="desktop",
+                                         transport="rtc", viewer_digest=hashlib.sha256(key.encode()).hexdigest())
+            result = {"id": sid, "session_key": key, "stun_port": self.stun_port}
+        else:
+            sid = body.get("id")
+            session = self.sessions.get(sid) if isinstance(sid, str) else None
+            key = request.headers.get("Authorization", "")
+            if (not session or not session.viewer_digest or not key.startswith("Bearer ")
+                    or len(key) != 71 or not secrets.compare_digest(session.viewer_digest,
+                        hashlib.sha256(key[7:].encode()).hexdigest())):
+                raise web.HTTPUnauthorized()
+            result = self.session_action(session.source, action, body, now)
+        return web.json_response(result, headers={"Cache-Control": "no-store"})
+
+    def session_action(self, device, action, body, now):
         sid = body.get("id")
         if not isinstance(sid, str):
             raise web.HTTPBadRequest()
@@ -337,6 +398,11 @@ def application(devices, clock=time.monotonic, registry_file=None, relay=False,
         app.on_shutdown.append(app[RELAY].shutdown)
     app.cleanup_ctx.append(cleanup)
     app.router.add_get("/healthz", health)
+    async def mobile(request: web.Request) -> web.Response:
+        if request.match_info["action"] == "rtc_publish":
+            request = request.clone(client_max_size=32768)
+        return await app[STATE].mobile_pair(request)
+    app.router.add_post("/v1/mobile/{action}", mobile)
     app.router.add_post("/v1/{action}", app[STATE].dispatch)
     if admin_token:
         from cluster import install

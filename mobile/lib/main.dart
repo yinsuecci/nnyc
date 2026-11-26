@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'profile.dart';
@@ -28,18 +27,13 @@ class NNRemote extends StatelessWidget {
 }
 
 class DirectoryPage extends StatefulWidget {
-  final Future<Map<String, bool>> Function(DirectoryProfile, String)
-      queryPresence;
-  const DirectoryPage({super.key, this.queryPresence = readPresence});
+  const DirectoryPage({super.key});
   @override
   State<DirectoryPage> createState() => _DirectoryPageState();
 }
 
 class _DirectoryPageState extends State<DirectoryPage> {
   DirectoryProfile? profile;
-  Map<String, bool> presence = {};
-  Timer? expiry;
-  bool checking = false;
   int revision = 0;
   String query = '', status = '';
   final search = TextEditingController();
@@ -56,7 +50,7 @@ class _DirectoryPageState extends State<DirectoryPage> {
       if (mounted && revision == initial && saved != null) {
         setState(() {
           profile = saved;
-          status = '已恢复通讯录，设备状态待确认';
+          status = '已恢复通讯录';
         });
       }
     } catch (_) {
@@ -89,12 +83,9 @@ class _DirectoryPageState extends State<DirectoryPage> {
     }
     if (!mounted) return;
     ++revision;
-    expiry?.cancel();
     search.clear();
     setState(() {
       profile = null;
-      presence = {};
-      checking = false;
       query = '';
       status = '已清除本机通讯录';
     });
@@ -102,7 +93,6 @@ class _DirectoryPageState extends State<DirectoryPage> {
 
   @override
   void dispose() {
-    expiry?.cancel();
     search.dispose();
     super.dispose();
   }
@@ -112,75 +102,15 @@ class _DirectoryPageState extends State<DirectoryPage> {
         context, MaterialPageRoute(builder: (_) => const ImportPage()));
     if (!mounted || next == null) return;
     search.clear();
-    expiry?.cancel();
     final request = ++revision;
     setState(() {
       profile = next;
-      presence = {};
-      checking = false;
       query = '';
       status = '正在检查信令服务';
     });
     final ready = await signalReady(next);
     if (!mounted || revision != request) return;
     setState(() => status = ready ? '信令服务可达' : '信令服务未就绪或无法验证');
-  }
-
-  Future<void> checkDevices() async {
-    final current = profile;
-    if (current == null || checking) return;
-    String entered = '';
-    final token = await showDialog<String>(
-        context: context,
-        builder: (dialog) => AlertDialog(
-                title: const Text('查询设备状态'),
-                content: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text('本次查询将设备令牌发送至：\n${current.origin.origin}'),
-                  TextField(
-                      obscureText: true,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: const InputDecoration(labelText: '本机设备令牌'),
-                      onChanged: (s) => entered = s.trim()),
-                ]),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(dialog),
-                      child: const Text('取消')),
-                  FilledButton(
-                      onPressed: () => Navigator.pop(dialog, entered),
-                      child: const Text('查询'))
-                ]));
-    if (token == null || !mounted || profile != current) return;
-    final request = ++revision;
-    expiry?.cancel();
-    setState(() {
-      checking = true;
-      presence = {};
-      status = '正在查询设备状态';
-    });
-    try {
-      final result = await widget.queryPresence(current, token);
-      if (!mounted || revision != request) return;
-      setState(() {
-        presence = result;
-        status = result.isEmpty ? '服务未返回获准查看的设备' : '设备状态已更新';
-      });
-      expiry = Timer(const Duration(seconds: 20), () {
-        if (mounted && revision == request) {
-          setState(() {
-            presence = {};
-            status = '状态已过期，请重新查询';
-          });
-        }
-      });
-    } on Exception {
-      if (mounted && revision == request) {
-        setState(() => status = '查询失败，请检查令牌、服务地址及服务版本');
-      }
-    } finally {
-      if (mounted && revision == request) setState(() => checking = false);
-    }
   }
 
   @override
@@ -193,11 +123,6 @@ class _DirectoryPageState extends State<DirectoryPage> {
         [];
     return Scaffold(
         appBar: AppBar(title: const Text('设备通讯录'), actions: [
-          if (profile != null)
-            IconButton(
-                tooltip: '查询设备状态',
-                onPressed: checking ? null : checkDevices,
-                icon: icon('arrow_swap')),
           IconButton(
               tooltip: '导入设备通讯录',
               onPressed: importDirectory,
@@ -239,11 +164,7 @@ class _DirectoryPageState extends State<DirectoryPage> {
                         borderRadius: BorderRadius.circular(10)),
                     child: icon('desktop', color: blue)),
                 title: Text(e.value),
-                subtitle: Text(switch (presence[e.key]) {
-                  true => '在线',
-                  false => '离线',
-                  null => '状态待确认'
-                }),
+                subtitle: const Text('使用电脑连接码连接'),
                 onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -267,9 +188,7 @@ class _DirectoryPageState extends State<DirectoryPage> {
                                           context,
                                           MaterialPageRoute(
                                               builder: (_) => DesktopPage(
-                                                  profile!,
-                                                  e.key,
-                                                  e.value))),
+                                                  profile!, e.key, e.value))),
                                       child: const Text('连接远程桌面')),
                                   const ListTile(
                                       title: Text('连接信息'),

@@ -8,14 +8,15 @@ import 'profile.dart';
 
 /// One explicitly authorized Windows desktop; no microphone, camera or disk credentials.
 class DesktopSession {
-  DesktopSession(DirectoryProfile profile, this.target, this._token,
+  DesktopSession(DirectoryProfile profile, this.target, this._code,
       this.onStatus, this.onTrack, this.onPath)
       : origin = profile.origin,
         _http =
             (profile.client()..connectionTimeout = const Duration(seconds: 4));
   final Uri origin;
   final String target;
-  String _token;
+  String _code;
+  String _token = '';
   final void Function(String) onStatus;
   final void Function(MediaStream) onTrack;
   final void Function(IcePath) onPath;
@@ -38,10 +39,11 @@ class DesktopSession {
 
   Future<Map<String, dynamic>> _call(
       String action, Map<String, dynamic> body) async {
-    final req = await _http.postUrl(origin.resolve('/v1/$action'));
+    final req = await _http.postUrl(origin.resolve('/v1/mobile/$action'));
     req.followRedirects = false;
     req.headers.contentType = ContentType.json;
-    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    if (_token.isNotEmpty)
+      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
     req.add(utf8.encode(jsonEncode(body)));
     final res = await req.close();
     if (res.statusCode != 200) {
@@ -62,7 +64,10 @@ class DesktopSession {
 
   Future<void> start() async {
     try {
-      final config = await call('viewer_heartbeat');
+      final config = await call('redeem', {'target': target, 'code': _code});
+      _code = '';
+      sid = config['id'] as String;
+      _token = config['session_key'] as String;
       check();
       final port = config['stun_port'];
       final ice = <Map<String, String>>[];
@@ -135,17 +140,12 @@ class DesktopSession {
       if (prints.length != 1) throw const FormatException('设备指纹不可用');
       verificationCode = prints.single.substring(0, 16);
       check();
-      await call('viewer_heartbeat');
-      final invite = await call('request',
-          {'target': target, 'purpose': 'desktop', 'transport': 'rtc'});
-      sid = invite['id'] as String;
       check();
       onStatus('等待 Windows 用户授权');
       bool published = false;
       final deadline = DateTime.now().add(const Duration(seconds: 60));
       for (int i = 0; DateTime.now().isBefore(deadline); i++) {
         check();
-        if (i % 5 == 0) await call('viewer_heartbeat');
         try {
           if (!published) {
             await call('rtc_publish', {'id': sid, 'sdp': offer});
@@ -178,7 +178,6 @@ class DesktopSession {
     if (_polling || closed) return;
     _polling = true;
     try {
-      await call('viewer_heartbeat');
       await call('active', {'id': sid});
       unawaited(_readPath());
     } catch (_) {
@@ -288,7 +287,8 @@ class _SignalError implements Exception {
   const _SignalError(this.status);
   @override
   String toString() => switch (status) {
-        401 => '设备令牌无效',
+        401 => '连接码已失效或会话已结束，请在电脑上获取新码',
+        429 => '尝试过于频繁，请稍后再试',
         404 => '设备离线或会话已结束',
         422 => '对端未启用移动桌面共享',
         409 => '当前设备身份被占用或会话不可用',

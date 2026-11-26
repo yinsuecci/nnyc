@@ -54,6 +54,25 @@ class Desktop(OfficeUI):
         return tk.Label(parent, text=text, textvariable=variable, anchor="w", bg=bg, fg=INK,
                         font=(FONT, size, "bold" if bold else "normal"))
 
+    async def show_pair_code(self) -> None:
+        if self.client is None:
+            self.status.set("请等待电脑连接信令服务器")
+            return
+        try:
+            result = await self.client.call("pair_code")
+        except ClientResponseError as error:
+            self.status.set("服务器不支持连接码或电脑尚未上线（HTTP %d）" % error.status)
+            return
+        if getattr(self, "_pair_window", None) and self._pair_window.winfo_exists():
+            self._pair_window.destroy()
+        win = self._pair_window = tk.Toplevel(self.root)
+        win.title("手机连接码")
+        code = result["code"]
+        self.label(win, "在 iPhone 上输入此码", 13).pack(padx=24, pady=12)
+        self.label(win, " ".join(code[i:i+3] for i in range(0, 9, 3)), 24, True).pack(padx=24)
+        self.label(win, "2 分钟内有效，仅限一次；共享前仍需你确认。", 10).pack(padx=24, pady=12)
+        win.after(result["expires_in"] * 1000, win.destroy)
+
     def show_settings(self):
         host = urlsplit(self.config["signaling"]).hostname
         dialog = tk.Toplevel(self.root)
@@ -305,16 +324,15 @@ class Desktop(OfficeUI):
                 from PIL import ImageGrab
                 from rtc_host import host_rtc
                 async def confirm(expected):
-                    value = tk.StringVar()
-                    self.label(dialog, "核对身份：输入手机上显示的本次校验码", 11).pack(padx=12)
-                    field = ttk.Entry(dialog, textvariable=value)
+                    caption = self.label(dialog, "与手机画面核对，无需输入", 11)
+                    caption.pack(padx=12)
+                    field = self.label(dialog, " ".join(expected[i:i+4] for i in range(0, len(expected), 4)), 14, True)
                     field.pack(pady=4)
-                    field.focus_set()
                     result = asyncio.get_running_loop().create_future()
                     def verify():
                         if not result.done():
-                            result.set_result(value.get().replace(" ", "").upper() == expected)
-                    button = ttk.Button(dialog, text="验证并共享", command=verify)
+                            result.set_result(True)
+                    button = ttk.Button(dialog, text="两端一致，开始共享", command=verify)
                     button.pack(pady=4)
                     try:
                         if not await result:
@@ -325,6 +343,7 @@ class Desktop(OfficeUI):
                     finally:
                         button.destroy()
                         field.destroy()
+                        caption.destroy()
                 async def setup_privacy():
                     nonlocal curtain, curtain_task, privacy_ready
                     from privacy_curtain import Curtain, Unsupported
@@ -378,7 +397,7 @@ class Desktop(OfficeUI):
                 await self.cancel_invite(sid)
 
     def prompt(self, invite):
-        sid, source = invite["id"], invite["source"]
+        sid, source = invite["id"], "持本机连接码的手机" if invite.get("paired") else invite["source"]
         purpose = invite["purpose"]
         window = tk.Toplevel(self.root)
         window.title({"desktop":"共享桌面","help":"远程协助","file":"接收文件"}[purpose])
@@ -443,7 +462,9 @@ class Desktop(OfficeUI):
                     self.devices = (await self.client.call("devices", peers=allowed))["devices"]
                     result = await self.client.call("inbox")
                     pending = {item["id"]: item for item in result["pending"]
-                               if item.get("purpose") in ("file", "desktop", "help") and item["source"] in allowed}
+                               if (item.get("purpose") in ("file", "desktop", "help") and item["source"] in allowed)
+                               or (item.get("paired") is True and item.get("transport") == "rtc"
+                                   and item.get("purpose") == "desktop")}
                     if self.status.get().startswith(("未连接信令", "连接信令失败")):
                         self.status.set("已连接信令服务")
                 except Exception as error:

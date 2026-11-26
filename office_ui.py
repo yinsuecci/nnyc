@@ -86,6 +86,8 @@ class OfficeUI:
         foot=tk.Frame(r,bg=RAIL,padx=14,pady=3)
         foot.pack(side="bottom",fill="x")
         label(foot,"nn远程",10,True,BLUE).pack(side="left")
+        if self.config.get("mobile_desktop"):
+            ttk.Button(foot, text="手机连接码", command=lambda: self.spawn(self.show_pair_code())).pack(side="left", padx=8)
         label(foot,size=9,color=MUTED,textvariable=self.status).pack(side="right")
         unit=r.winfo_fpixels("1i")/96
         px=lambda value: round(value*unit)
