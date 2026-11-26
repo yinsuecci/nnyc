@@ -42,8 +42,9 @@ class DesktopSession {
     final req = await _http.postUrl(origin.resolve('/v1/mobile/$action'));
     req.followRedirects = false;
     req.headers.contentType = ContentType.json;
-    if (_token.isNotEmpty)
+    if (_token.isNotEmpty) {
       req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    }
     req.add(utf8.encode(jsonEncode(body)));
     final res = await req.close();
     if (res.statusCode != 200) {

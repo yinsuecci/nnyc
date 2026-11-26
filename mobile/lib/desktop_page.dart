@@ -190,7 +190,7 @@ class _DesktopPageState extends State<DesktopPage> with WidgetsBindingObserver {
                   keyboardType: TextInputType.number,
                   autocorrect: false,
                   enableSuggestions: false,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                       labelText: '电脑连接码',
                       helperText: '在 Windows 客户端点击「手机连接码」'))),
         if (!firstFrame && (session?.verificationCode.isNotEmpty ?? false))
