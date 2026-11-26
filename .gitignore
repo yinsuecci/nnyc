@@ -12,6 +12,9 @@ node_modules/
 *.dpapi
 *.key
 runtime/
+/.temp/
+/.local/
+/sideloadlydaemon.log
 worker-token
 admin-token
 config.json

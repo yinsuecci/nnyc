@@ -1,0 +1,6 @@
+{
+  "host": "server.example.invalid",
+  "user": "deploy",
+  "port": 22,
+  "password_dpapi": "SET_BY_LOCAL_SETUP"
+}
